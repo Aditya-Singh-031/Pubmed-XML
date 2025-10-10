@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 import re
 import argparse
 import sys
-from typing import List, Tuple
+from typing import Tuple
 
 
 def contains_sequence(article_text: str) -> bool:
@@ -61,9 +61,12 @@ def contains_sequence(article_text: str) -> bool:
     if re.search(pdb_pattern, article_text):
         return True
     
-    # UniProt/Swiss-Prot pattern: comprehensive regex for UniProt IDs
-    uniprot_pattern = r'\b[OPQ][0-9][A-Z0-9]{3}[0-9]\b|\b[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}\b'
-    if re.search(uniprot_pattern, article_text):
+    # UniProt/Swiss-Prot patterns (split into two to keep lines short)
+    uniprot_pattern_primary = r'\b[OPQ][0-9][A-Z0-9]{3}[0-9]\b'
+    if re.search(uniprot_pattern_primary, article_text):
+        return True
+    uniprot_pattern_secondary = r'\b[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}\b'
+    if re.search(uniprot_pattern_secondary, article_text):
         return True
     
     return False
@@ -124,7 +127,7 @@ def process_pubmed_xml(input_file: str, output_file: str) -> Tuple[int, int]:
         out_file.write('<PubmedArticleSet>\n')
         
         # Use iterparse for memory-efficient processing
-        for event, elem in ET.iterparse(input_file, events=('end',)):
+        for _, elem in ET.iterparse(input_file, events=('end',)):
             if elem.tag == 'PubmedArticle':
                 articles_processed += 1
                 
@@ -186,7 +189,7 @@ Examples:
         total_articles, articles_with_sequences = process_pubmed_xml(args.input, args.output)
         
         # Print results
-        print(f"\nProcessing complete!")
+        print("\nProcessing complete!")
         print(f"Total articles processed: {total_articles:,}")
         print(f"Articles with sequences found: {articles_with_sequences:,}")
         print(f"Output saved to: {args.output}")
@@ -201,7 +204,7 @@ Examples:
     except ET.ParseError as e:
         print(f"Error: Invalid XML format in input file: {e}")
         sys.exit(1)
-    except Exception as e:
+    except (OSError, KeyboardInterrupt) as e:
         print(f"Error: {e}")
         sys.exit(1)
 
