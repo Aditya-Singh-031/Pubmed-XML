@@ -14,12 +14,20 @@ Fields per row:
   - DOI
   - Authors (semicolon-separated)
   - Abstract
+  - Keywords (semicolon-separated)
+  - Affiliations (semicolon-separated)
+  - ContactEmail
+  - DateReceived
+  - DateAccepted
+  - MedlineStatus
+  - MedlineOwner
 
 Usage:
   python pubmed_xml_to_csv.py --input pubmed25n1271.xml --output pubmed_articles.csv
 """
 
 import argparse
+import re
 import sys
 from typing import Dict, List, Optional
 import xml.etree.ElementTree as ET
@@ -63,8 +71,10 @@ def extract_doi(article_elem: ET.Element) -> str:
 
 def extract_authors(article_elem: ET.Element) -> Dict[str, str]:
     authors: List[str] = []
+    affiliations: List[str] = []
     first_last = ''
     first_fore = ''
+    
     for idx, author in enumerate(article_elem.findall('.//AuthorList/Author')):
         last = get_text(author.find('LastName'))
         fore = get_text(author.find('ForeName'))
@@ -74,10 +84,23 @@ def extract_authors(article_elem: ET.Element) -> Dict[str, str]:
             if idx == 0:
                 first_last = last
                 first_fore = fore
+        
+        # Extract affiliations for this author
+        for affiliation_info in author.findall('.//AffiliationInfo/Affiliation'):
+            affiliation_text = get_text(affiliation_info)
+            if affiliation_text:
+                affiliations.append(affiliation_text)
+    
+    # Join all affiliations and search for email
+    all_affiliations = '; '.join(affiliations)
+    email_match = re.search(r'[\w\.-]+@[\w\.-]+', all_affiliations) if all_affiliations else None
+    
     return {
         'FirstAuthorLastName': first_last,
         'FirstAuthorForeName': first_fore,
         'Authors': '; '.join(authors),
+        'Affiliations': all_affiliations,
+        'ContactEmail': email_match.group(0) if email_match else ''
     }
 
 
@@ -89,6 +112,57 @@ def extract_abstract(article_elem: ET.Element) -> str:
         if text:
             parts.append(text)
     return ' '.join(parts)
+
+
+def extract_keywords(pubmed_article: ET.Element) -> str:
+    """Extract keywords from KeywordList/Keyword tags."""
+    keywords: List[str] = []
+    for keyword in pubmed_article.findall('.//KeywordList/Keyword'):
+        text = get_text(keyword)
+        if text:
+            keywords.append(text)
+    return '; '.join(keywords)
+
+
+def extract_history_dates(pubmed_article: ET.Element) -> Dict[str, str]:
+    """Extract received and accepted dates from PubmedData/History."""
+    date_received = ''
+    date_accepted = ''
+    
+    for pub_date in pubmed_article.findall('.//PubmedData/History/PubMedPubDate'):
+        pub_status = pub_date.get('PubStatus', '').lower()
+        year = get_text(pub_date.find('Year'))
+        month = get_text(pub_date.find('Month'))
+        day = get_text(pub_date.find('Day'))
+        
+        if year and month and day:
+            formatted_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+            
+            if pub_status == 'received':
+                date_received = formatted_date
+            elif pub_status == 'accepted':
+                date_accepted = formatted_date
+    
+    return {
+        'DateReceived': date_received,
+        'DateAccepted': date_accepted
+    }
+
+
+def extract_medline_info(pubmed_article: ET.Element) -> Dict[str, str]:
+    """Extract Status and Owner attributes from MedlineCitation."""
+    medline_citation = pubmed_article.find('.//MedlineCitation')
+    if medline_citation is not None:
+        status = medline_citation.get('Status', '')
+        owner = medline_citation.get('Owner', '')
+        return {
+            'MedlineStatus': status,
+            'MedlineOwner': owner
+        }
+    return {
+        'MedlineStatus': '',
+        'MedlineOwner': ''
+    }
 
 
 def extract_row(pubmed_article: ET.Element) -> Dict[str, str]:
@@ -103,6 +177,9 @@ def extract_row(pubmed_article: ET.Element) -> Dict[str, str]:
     author_info = extract_authors(pubmed_article)
     doi = extract_doi(pubmed_article)
     abstract = extract_abstract(pubmed_article)
+    keywords = extract_keywords(pubmed_article)
+    history_dates = extract_history_dates(pubmed_article)
+    medline_info = extract_medline_info(pubmed_article)
 
     row = {
         'PMID': pmid,
@@ -114,6 +191,11 @@ def extract_row(pubmed_article: ET.Element) -> Dict[str, str]:
         'DOI': doi,
         'Authors': author_info['Authors'],
         'Abstract': abstract,
+        'Keywords': keywords,
+        'Affiliations': author_info['Affiliations'],
+        'ContactEmail': author_info['ContactEmail'],
+        **history_dates,
+        **medline_info,
     }
     return row
 
