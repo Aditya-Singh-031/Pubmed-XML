@@ -36,12 +36,14 @@ import pandas as pd
 
 
 def get_text(elem: Optional[ET.Element]) -> str:
+    """Extract text content from XML element, returning empty string if None."""
     if elem is None or elem.text is None:
         return ''
     return elem.text.strip()
 
 
 def extract_pub_date(article_elem: ET.Element) -> Dict[str, str]:
+    """Extract publication date from Journal/JournalIssue/PubDate."""
     # Prefer Article > Journal > JournalIssue > PubDate
     year = month = day = ''
     pub_date = article_elem.find('.//Journal/JournalIssue/PubDate')
@@ -53,6 +55,7 @@ def extract_pub_date(article_elem: ET.Element) -> Dict[str, str]:
 
 
 def extract_doi(article_elem: ET.Element) -> str:
+    """Extract DOI from ELocationID or ArticleId elements."""
     # DOI can be in ELocationID with EIdType="doi" or in ArticleIdList/ArticleId IdType="doi"
     eloc = article_elem.findall('.//ELocationID')
     for el in eloc:
@@ -70,11 +73,12 @@ def extract_doi(article_elem: ET.Element) -> str:
 
 
 def extract_authors(article_elem: ET.Element) -> Dict[str, str]:
+    """Extract author information including names, affiliations, and contact email."""
     authors: List[str] = []
     affiliations: List[str] = []
     first_last = ''
     first_fore = ''
-    
+
     for idx, author in enumerate(article_elem.findall('.//AuthorList/Author')):
         last = get_text(author.find('LastName'))
         fore = get_text(author.find('ForeName'))
@@ -84,17 +88,17 @@ def extract_authors(article_elem: ET.Element) -> Dict[str, str]:
             if idx == 0:
                 first_last = last
                 first_fore = fore
-        
+
         # Extract affiliations for this author
         for affiliation_info in author.findall('.//AffiliationInfo/Affiliation'):
             affiliation_text = get_text(affiliation_info)
             if affiliation_text:
                 affiliations.append(affiliation_text)
-    
+
     # Join all affiliations and search for email
     all_affiliations = '; '.join(affiliations)
     email_match = re.search(r'[\w\.-]+@[\w\.-]+', all_affiliations) if all_affiliations else None
-    
+
     return {
         'FirstAuthorLastName': first_last,
         'FirstAuthorForeName': first_fore,
@@ -105,6 +109,7 @@ def extract_authors(article_elem: ET.Element) -> Dict[str, str]:
 
 
 def extract_abstract(article_elem: ET.Element) -> str:
+    """Extract and concatenate all AbstractText parts preserving order."""
     # Concatenate all AbstractText parts preserving order
     parts: List[str] = []
     for at in article_elem.findall('.//Abstract/AbstractText'):
@@ -128,21 +133,21 @@ def extract_history_dates(pubmed_article: ET.Element) -> Dict[str, str]:
     """Extract received and accepted dates from PubmedData/History."""
     date_received = ''
     date_accepted = ''
-    
+
     for pub_date in pubmed_article.findall('.//PubmedData/History/PubMedPubDate'):
         pub_status = pub_date.get('PubStatus', '').lower()
         year = get_text(pub_date.find('Year'))
         month = get_text(pub_date.find('Month'))
         day = get_text(pub_date.find('Day'))
-        
+
         if year and month and day:
             formatted_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-            
+
             if pub_status == 'received':
                 date_received = formatted_date
             elif pub_status == 'accepted':
                 date_accepted = formatted_date
-    
+
     return {
         'DateReceived': date_received,
         'DateAccepted': date_accepted
@@ -166,6 +171,7 @@ def extract_medline_info(pubmed_article: ET.Element) -> Dict[str, str]:
 
 
 def extract_row(pubmed_article: ET.Element) -> Dict[str, str]:
+    """Extract all fields from a PubmedArticle element into a dictionary."""
     pmid = get_text(pubmed_article.find('.//PMID'))
     article = pubmed_article.find('.//Article')
     journal_title = ''
@@ -201,6 +207,7 @@ def extract_row(pubmed_article: ET.Element) -> Dict[str, str]:
 
 
 def stream_to_csv(input_file: str, output_file: str, chunk_size: int = 5000) -> None:
+    """Stream parse XML file and write to CSV in chunks."""
     buffer: List[Dict[str, str]] = []
     written_header = False
 
@@ -239,6 +246,7 @@ def stream_to_csv(input_file: str, output_file: str, chunk_size: int = 5000) -> 
 
 
 def main() -> None:
+    """Main function to parse command line arguments and process XML file."""
     parser = argparse.ArgumentParser(
         description='Parse PubMed XML into CSV with selected fields'
     )
@@ -258,5 +266,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
-
